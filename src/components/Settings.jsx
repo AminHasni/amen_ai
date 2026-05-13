@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Save, Shield, Cpu, Network, Bell, Camera, Loader2, CheckCircle2, Settings as SettingsIcon } from 'lucide-react';
+import { supabase } from '../supabase';
 
 const Settings = () => {
     const [activeTab, setActiveTab] = useState('system');
@@ -13,9 +14,18 @@ const Settings = () => {
     const [alertSound, setAlertSound] = useState(localStorage.getItem('amen_alert_sound') !== 'false');
     const [emailAlerts, setEmailAlerts] = useState(localStorage.getItem('amen_email_alerts') !== 'false');
 
-    const handleSave = () => {
+    const handleSave = async () => {
         setIsSaving(true);
         
+        // Sauvegarde dans Supabase pour la synchronisation Cloud
+        try {
+            await supabase
+                .from('app_settings')
+                .upsert({ key: 'camera_url', value: piIp }, { onConflict: 'key' });
+        } catch (e) {
+            console.error("Erreur de sync Supabase");
+        }
+
         // Sauvegarde réelle dans le localStorage
         localStorage.setItem('amen_pi_ip', piIp);
         localStorage.setItem('amen_pi_port', piPort);

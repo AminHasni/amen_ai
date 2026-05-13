@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Wifi, WifiOff, Activity } from 'lucide-react';
+import { supabase } from '../supabase';
 
 const LiveStream = () => {
     const [isConnected, setIsConnected] = useState(false);
@@ -10,9 +11,25 @@ const LiveStream = () => {
     const imgRef = useRef(null);
     const wsRef = useRef(null);
 
-    const connectWebSocket = () => {
+    const connectWebSocket = async () => {
         let ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
         const port = localStorage.getItem('amen_pi_port') || "8000";
+        
+        // TENTER DE RÉCUPÉRER L'IP DEPUIS SUPABASE (SYNC AUTO)
+        try {
+            const { data, error } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'camera_url')
+                .single();
+            
+            if (data && data.value) {
+                console.log("IP récupérée depuis Supabase:", data.value);
+                ip = data.value;
+            }
+        } catch (e) {
+            console.log("Échec de la récup Supabase, utilisation du cache local.");
+        }
         
         let baseUrl;
         if (ip.includes('://')) {
