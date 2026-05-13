@@ -11,92 +11,97 @@ const LiveStream = () => {
     const wsRef = useRef(null);
 
     const connectWebSocket = () => {
-        // Récupérer les réglages depuis le localStorage ou utiliser les défauts
         let ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
         const port = localStorage.getItem('amen_pi_port') || "8000";
         
-        let wsUrl;
-
+        let baseUrl;
         if (ip.includes('://')) {
-            // Si l'utilisateur a mis une URL complète (ex: https://.../video)
-            // On remplace http par ws et https par wss
-            wsUrl = ip.replace(/^http/, 'ws');
-            
-            // Si l'URL ne finit pas par /ws/live et ne semble pas être un chemin complet vers un flux
-            // On n'ajoute /ws/live QUE si l'URL s'arrête au domaine
-            const urlObj = new URL(ip);
-            if (urlObj.pathname === '/' || urlObj.pathname === '') {
-                wsUrl = wsUrl.replace(/\/$/, '') + '/ws/live';
-            }
+            baseUrl = ip.replace(/^http/, 'ws').replace(/\/$/, '');
         } else {
-            // Mode local classique (IP brute)
-            wsUrl = `ws://${ip}:${port}/ws/live`;
+            baseUrl = `ws://${ip}:${port}`;
         }
 
-        console.log("Tentative de connexion à:", wsUrl);
-        setDebugInfo(`Connexion à ${new URL(wsUrl.replace(/^ws/, 'http')).hostname}...`);
-        
-        if (wsRef.current) wsRef.current.close();
-        
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-        let firstMessageReceived = false;
+        const pathsToTry = ['/ws/live', '/ws', '/'];
 
-        // Timer pour détecter les échecs de connexion prolongés (ex: 4G vs Local)
-        const errorTimer = setTimeout(() => {
-            if (!firstMessageReceived) {
+        const attemptConnection = (pathIndex) => {
+            if (pathIndex >= pathsToTry.length) {
                 setConnectionError(true);
-                setDebugInfo("Erreur de portée réseau détectée.");
+                setDebugInfo("Injoignable (Canaux testés: /ws/live, /ws, /)");
+                return;
             }
-        }, 7000);
 
-        ws.onopen = () => {
-            setIsConnected(true);
-            setConnectionError(false);
-            setDebugInfo("Connecté au Raspberry Pi. Attente vidéo...");
-            try { ws.send("START"); } catch(e) {}
-        };
+            const wsUrl = baseUrl + pathsToTry[pathIndex];
+            setDebugInfo(`Vérification canal ${pathsToTry[pathIndex]}...`);
+            
+            if (wsRef.current) wsRef.current.close();
+            const ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+            
+            let firstMessageReceived = false;
+            let hasTimedOut = false;
+            
+            const timeout = setTimeout(() => {
+                if (!firstMessageReceived) {
+                    hasTimedOut = true;
+                    ws.close();
+                    attemptConnection(pathIndex + 1);
+                }
+            }, 3500);
 
-        ws.onmessage = (event) => {
-            if (!firstMessageReceived) {
-                firstMessageReceived = true;
-                setHasReceivedFrame(true);
+            ws.onopen = () => {
+                setIsConnected(true);
                 setConnectionError(false);
-                setDebugInfo("Flux actif (Temps Réel)");
-                clearTimeout(errorTimer);
-            }
+                try { ws.send("START"); } catch(e) {}
+            };
 
-            if (event.data instanceof Blob) {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    if (imgRef.current) imgRef.current.src = reader.result;
-                };
-                reader.readAsDataURL(event.data);
-            } else {
-                let finalB64 = String(event.data);
-                if (finalB64.startsWith('{')) {
-                    try {
-                        const obj = JSON.parse(finalB64);
-                        finalB64 = obj.image || obj.frame || finalB64;
-                    } catch(e) {}
+            ws.onmessage = (event) => {
+                if (!firstMessageReceived) {
+                    firstMessageReceived = true;
+                    clearTimeout(timeout);
+                    setHasReceivedFrame(true);
+                    setConnectionError(false);
+                    setDebugInfo(`Flux actif sur ${pathsToTry[pathIndex]}`);
                 }
-                if (finalB64.length > 50) {
-                    if (!finalB64.startsWith('data:')) finalB64 = `data:image/jpeg;base64,${finalB64}`;
-                    if (imgRef.current) imgRef.current.src = finalB64;
+
+                if (event.data instanceof Blob) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        if (imgRef.current) imgRef.current.src = reader.result;
+                    };
+                    reader.readAsDataURL(event.data);
+                } else {
+                    let finalB64 = String(event.data);
+                    if (finalB64.startsWith('{')) {
+                        try {
+                            const obj = JSON.parse(finalB64);
+                            finalB64 = obj.image || obj.frame || finalB64;
+                        } catch(e) {}
+                    }
+                    if (finalB64.length > 50) {
+                        if (!finalB64.startsWith('data:')) finalB64 = `data:image/jpeg;base64,${finalB64}`;
+                        if (imgRef.current) imgRef.current.src = finalB64;
+                    }
                 }
-            }
+            };
+
+            ws.onclose = () => {
+                if (firstMessageReceived) {
+                    setIsConnected(false);
+                    setHasReceivedFrame(false);
+                    setTimeout(connectWebSocket, 3000);
+                }
+            };
+
+            ws.onerror = () => {
+                clearTimeout(timeout);
+                if (!firstMessageReceived && !hasTimedOut) {
+                    ws.close();
+                    attemptConnection(pathIndex + 1);
+                }
+            };
         };
 
-        ws.onclose = () => {
-            setIsConnected(false);
-            setHasReceivedFrame(false);
-            setTimeout(connectWebSocket, 3000); 
-        };
-        
-        ws.onerror = () => {
-            setConnectionError(true);
-            ws.close();
-        };
+        attemptConnection(0);
     };
 
     useEffect(() => {
