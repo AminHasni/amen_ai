@@ -6,21 +6,30 @@ const Settings = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [saved, setSaved] = useState(false);
 
-    // Form states
-    const [piIp, setPiIp] = useState('192.168.0.18');
-    const [piPort, setPiPort] = useState('8000');
-    const [aiSensitivity, setAiSensitivity] = useState(75);
-    const [alertSound, setAlertSound] = useState(true);
-    const [emailAlerts, setEmailAlerts] = useState(true);
+    // Form states (Initialisation depuis le localStorage ou valeurs par défaut)
+    const [piIp, setPiIp] = useState(localStorage.getItem('amen_pi_ip') || '192.168.0.18');
+    const [piPort, setPiPort] = useState(localStorage.getItem('amen_pi_port') || '8000');
+    const [aiSensitivity, setAiSensitivity] = useState(parseInt(localStorage.getItem('amen_ai_sensitivity')) || 75);
+    const [alertSound, setAlertSound] = useState(localStorage.getItem('amen_alert_sound') !== 'false');
+    const [emailAlerts, setEmailAlerts] = useState(localStorage.getItem('amen_email_alerts') !== 'false');
 
     const handleSave = () => {
         setIsSaving(true);
-        // Simulation d'une sauvegarde
+        
+        // Sauvegarde réelle dans le localStorage
+        localStorage.setItem('amen_pi_ip', piIp);
+        localStorage.setItem('amen_pi_port', piPort);
+        localStorage.setItem('amen_ai_sensitivity', aiSensitivity);
+        localStorage.setItem('amen_alert_sound', alertSound);
+        localStorage.setItem('amen_email_alerts', emailAlerts);
+
         setTimeout(() => {
             setIsSaving(false);
             setSaved(true);
+            // Déclencher un événement personnalisé pour que LiveStream se mette à jour sans recharger
+            window.dispatchEvent(new Event('amen_settings_updated'));
             setTimeout(() => setSaved(false), 3000);
-        }, 1500);
+        }, 800);
     };
 
     return (

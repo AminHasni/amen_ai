@@ -4,98 +4,104 @@ import { Wifi, WifiOff, Activity } from 'lucide-react';
 const LiveStream = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [hasReceivedFrame, setHasReceivedFrame] = useState(false);
-    const [debugInfo, setDebugInfo] = useState("En attente de connexion...");
+    const [debugInfo, setDebugInfo] = useState("Initialisation du flux...");
+    const [connectionError, setConnectionError] = useState(false);
     
-    // Référence directe à l'image pour bypasser le rendu React (ZÉRO LATENCE)
     const imgRef = useRef(null);
+    const wsRef = useRef(null);
 
-    // Remplacer par l'IP STATIQUE de votre Raspberry Pi ou votre domaine DDNS
-    const RASPBERRY_PI_IP = "192.168.0.18"; 
-    const PORT = "8000";
+    const connectWebSocket = () => {
+        // Récupérer les réglages depuis le localStorage ou utiliser les défauts
+        const ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
+        const port = localStorage.getItem('amen_pi_port') || "8000";
+        
+        // Gérer les URLs de tunnel (https -> wss, http -> ws)
+        const protocol = ip.startsWith('http') ? (ip.startsWith('https') ? 'wss' : 'ws') : 'ws';
+        const cleanIp = ip.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        
+        const wsUrl = ip.includes('://') 
+            ? `${protocol}://${cleanIp}/ws/live` 
+            : `ws://${cleanIp}:${port}/ws/live`;
 
-    useEffect(() => {
-        const wsUrl = `ws://${RASPBERRY_PI_IP}:${PORT}/ws/live`;
-        let ws;
+        console.log("Tentative de connexion à:", wsUrl);
+        setDebugInfo(`Connexion à ${cleanIp}...`);
+        
+        if (wsRef.current) wsRef.current.close();
+        
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
         let firstMessageReceived = false;
 
-        const connectWebSocket = () => {
-            ws = new WebSocket(wsUrl);
+        // Timer pour détecter les échecs de connexion prolongés (ex: 4G vs Local)
+        const errorTimer = setTimeout(() => {
+            if (!firstMessageReceived) {
+                setConnectionError(true);
+                setDebugInfo("Erreur de portée réseau détectée.");
+            }
+        }, 7000);
 
-            ws.onopen = () => {
-                console.log("Connecté au flux AMEN_IA");
-                setIsConnected(true);
-                setDebugInfo("Connecté. Attente des données vidéo...");
-                try { ws.send("START"); } catch(e) {}
-            };
-
-            ws.onmessage = (event) => {
-                if (!firstMessageReceived) {
-                    firstMessageReceived = true;
-                    setHasReceivedFrame(true);
-                    setDebugInfo("Flux vidéo actif en temps réel !");
-                }
-
-                let finalB64 = null;
-
-                if (event.data instanceof Blob) {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        // MISE À JOUR DIRECTE DU DOM (Supprime la latence React)
-                        if (imgRef.current) imgRef.current.src = reader.result;
-                    };
-                    reader.readAsDataURL(event.data);
-                    return;
-                } else {
-                    const text = String(event.data);
-                    
-                    if (text.startsWith('{')) {
-                        try {
-                            const obj = JSON.parse(text);
-                            for (let key in obj) {
-                                if (typeof obj[key] === 'string' && obj[key].length > 100) {
-                                    finalB64 = obj[key];
-                                    break;
-                                }
-                            }
-                        } catch(e) {}
-                    }
-                    
-                    if (!finalB64) {
-                        finalB64 = text;
-                        if (finalB64.startsWith("b'") || finalB64.startsWith('b"')) {
-                            finalB64 = finalB64.substring(2, finalB64.length - 1);
-                        }
-                    }
-                    
-                    if (finalB64 && !finalB64.startsWith('data:')) {
-                        finalB64 = `data:image/jpeg;base64,${finalB64}`;
-                    }
-
-                    // MISE À JOUR DIRECTE DU DOM (Supprime la latence React)
-                    if (imgRef.current && finalB64) {
-                        imgRef.current.src = finalB64;
-                    }
-                }
-            };
-
-            ws.onclose = () => {
-                console.log("Déconnecté. Tentative de reconnexion...");
-                setIsConnected(false);
-                setHasReceivedFrame(false);
-                setDebugInfo("Déconnecté. Tentative de reconnexion...");
-                setTimeout(connectWebSocket, 2000); 
-            };
-            
-            ws.onerror = (error) => {
-                console.error("Erreur WebSocket: ", error);
-                ws.close();
-            };
+        ws.onopen = () => {
+            setIsConnected(true);
+            setConnectionError(false);
+            setDebugInfo("Connecté au Raspberry Pi. Attente vidéo...");
+            try { ws.send("START"); } catch(e) {}
         };
 
+        ws.onmessage = (event) => {
+            if (!firstMessageReceived) {
+                firstMessageReceived = true;
+                setHasReceivedFrame(true);
+                setConnectionError(false);
+                setDebugInfo("Flux actif (Temps Réel)");
+                clearTimeout(errorTimer);
+            }
+
+            if (event.data instanceof Blob) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (imgRef.current) imgRef.current.src = reader.result;
+                };
+                reader.readAsDataURL(event.data);
+            } else {
+                let finalB64 = String(event.data);
+                if (finalB64.startsWith('{')) {
+                    try {
+                        const obj = JSON.parse(finalB64);
+                        finalB64 = obj.image || obj.frame || finalB64;
+                    } catch(e) {}
+                }
+                if (finalB64.length > 50) {
+                    if (!finalB64.startsWith('data:')) finalB64 = `data:image/jpeg;base64,${finalB64}`;
+                    if (imgRef.current) imgRef.current.src = finalB64;
+                }
+            }
+        };
+
+        ws.onclose = () => {
+            setIsConnected(false);
+            setHasReceivedFrame(false);
+            setTimeout(connectWebSocket, 3000); 
+        };
+        
+        ws.onerror = () => {
+            setConnectionError(true);
+            ws.close();
+        };
+    };
+
+    useEffect(() => {
         connectWebSocket();
 
+        // Écouter les changements de configuration
+        const handleSettingsUpdate = () => {
+            console.log("Paramètres mis à jour, reconnexion...");
+            connectWebSocket();
+        };
+
+        window.addEventListener('amen_settings_updated', handleSettingsUpdate);
         return () => {
-            if (ws) ws.close();
+            if (wsRef.current) wsRef.current.close();
+            window.removeEventListener('amen_settings_updated', handleSettingsUpdate);
         };
     }, []);
 
@@ -164,14 +170,37 @@ const LiveStream = () => {
                     )}
 
                     {!hasReceivedFrame && (
-                        <div className="flex flex-col items-center gap-5 z-20">
-                            <div className="relative">
-                                <div className="absolute inset-0 rounded-full border-t-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] animate-spin"></div>
-                                <div className="w-16 h-16 rounded-full border-4 border-slate-800/80"></div>
-                            </div>
-                            <span className="text-cyan-400 font-mono text-sm tracking-widest text-center animate-pulse">
-                                {isConnected ? "ACQUISITION DU FLUX..." : "CONNEXION AU RASPBERRY PI..."}
-                            </span>
+                        <div className="flex flex-col items-center gap-5 z-20 px-8">
+                            {connectionError ? (
+                                <div className="text-center space-y-4 animate-in fade-in zoom-in duration-500">
+                                    <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                                        <WifiOff size={32} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <p className="text-amber-400 font-bold text-sm tracking-tight">Flux Injoignable</p>
+                                        <p className="text-slate-400 text-[11px] leading-relaxed max-w-[240px]">
+                                            Vous êtes probablement sur un réseau externe (4G). <br/>
+                                            Utilisez un **Tunnel Cloudflare** ou une **IP Publique** dans les réglages.
+                                        </p>
+                                    </div>
+                                    <button 
+                                        onClick={() => connectWebSocket()}
+                                        className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition-colors"
+                                    >
+                                        RÉESSAYER
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="relative">
+                                        <div className="absolute inset-0 rounded-full border-t-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] animate-spin"></div>
+                                        <div className="w-16 h-16 rounded-full border-4 border-slate-800/80"></div>
+                                    </div>
+                                    <span className="text-cyan-400 font-mono text-sm tracking-widest text-center animate-pulse">
+                                        {isConnected ? "ACQUISITION DU FLUX..." : "CONNEXION AU RASPBERRY PI..."}
+                                    </span>
+                                </>
+                            )}
                         </div>
                     )}
                 </div>
