@@ -12,19 +12,29 @@ const LiveStream = () => {
 
     const connectWebSocket = () => {
         // Récupérer les réglages depuis le localStorage ou utiliser les défauts
-        const ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
+        let ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
         const port = localStorage.getItem('amen_pi_port') || "8000";
         
-        // Gérer les URLs de tunnel (https -> wss, http -> ws)
-        const protocol = ip.startsWith('http') ? (ip.startsWith('https') ? 'wss' : 'ws') : 'ws';
-        const cleanIp = ip.replace(/^https?:\/\//, '').replace(/\/$/, '');
-        
-        const wsUrl = ip.includes('://') 
-            ? `${protocol}://${cleanIp}/ws/live` 
-            : `ws://${cleanIp}:${port}/ws/live`;
+        let wsUrl;
+
+        if (ip.includes('://')) {
+            // Si l'utilisateur a mis une URL complète (ex: https://.../video)
+            // On remplace http par ws et https par wss
+            wsUrl = ip.replace(/^http/, 'ws');
+            
+            // Si l'URL ne finit pas par /ws/live et ne semble pas être un chemin complet vers un flux
+            // On n'ajoute /ws/live QUE si l'URL s'arrête au domaine
+            const urlObj = new URL(ip);
+            if (urlObj.pathname === '/' || urlObj.pathname === '') {
+                wsUrl = wsUrl.replace(/\/$/, '') + '/ws/live';
+            }
+        } else {
+            // Mode local classique (IP brute)
+            wsUrl = `ws://${ip}:${port}/ws/live`;
+        }
 
         console.log("Tentative de connexion à:", wsUrl);
-        setDebugInfo(`Connexion à ${cleanIp}...`);
+        setDebugInfo(`Connexion à ${new URL(wsUrl.replace(/^ws/, 'http')).hostname}...`);
         
         if (wsRef.current) wsRef.current.close();
         
