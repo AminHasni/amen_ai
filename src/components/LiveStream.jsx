@@ -124,15 +124,31 @@ const LiveStream = () => {
     useEffect(() => {
         connectWebSocket();
 
-        // Écouter les changements de configuration
+        // 1. Écouter les changements en TEMPS RÉEL sur Supabase
+        const channel = supabase
+            .channel('app_settings_changes')
+            .on(
+                'postgres_changes', 
+                { event: 'UPDATE', schema: 'public', table: 'app_settings', filter: 'key=eq.camera_url' },
+                (payload) => {
+                    console.log("Nouvelle URL détectée via Supabase Realtime:", payload.new.value);
+                    localStorage.setItem('amen_pi_ip', payload.new.value);
+                    connectWebSocket();
+                }
+            )
+            .subscribe();
+
+        // 2. Écouter les changements locaux (depuis l'onglet Configuration)
         const handleSettingsUpdate = () => {
-            console.log("Paramètres mis à jour, reconnexion...");
+            console.log("Paramètres locaux mis à jour, reconnexion...");
             connectWebSocket();
         };
 
         window.addEventListener('amen_settings_updated', handleSettingsUpdate);
+        
         return () => {
             if (wsRef.current) wsRef.current.close();
+            supabase.removeChannel(channel);
             window.removeEventListener('amen_settings_updated', handleSettingsUpdate);
         };
     }, []);
