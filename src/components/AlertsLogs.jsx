@@ -87,6 +87,20 @@ const AlertsLogs = () => {
             .replace(/(\[DANGER\s*:\s*[A-Z]+\])/ig, '<span class="inline-block px-2.5 py-1 mt-3 bg-red-500/10 text-red-400 rounded-md text-[10px] font-bold border border-red-500/20">$1</span>')
             .replace(/\s(-\s[A-Z0-9])/g, '<br /><span class="text-slate-500 ml-2">&bull;</span> $1');
 
+        // Mise en exergue des mots-clés critiques (Lisibilité cognitive)
+        const criticalKeywords = ['arme', 'effraction', 'inconnu', 'intrusion', 'violence', 'vol', 'suspect', 'menace'];
+        criticalKeywords.forEach(keyword => {
+            const regex = new RegExp(`\\b(${keyword}s?)\\b`, 'gi');
+            formattedText = formattedText.replace(regex, '<span class="text-red-400 font-bold bg-red-500/10 px-1 rounded border border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.2)]">$1</span>');
+        });
+
+        // Mise en exergue des mots-clés d'attention
+        const warningKeywords = ['véhicule', 'mouvement', 'anormal', 'rôde', 'masqué', 'nuit', 'non autorisé'];
+        warningKeywords.forEach(keyword => {
+            const regex = new RegExp(`\\b(${keyword}s?)\\b`, 'gi');
+            formattedText = formattedText.replace(regex, '<span class="text-amber-400 font-bold bg-amber-500/10 px-1 rounded border border-amber-500/20">$1</span>');
+        });
+
         return <div dangerouslySetInnerHTML={{ __html: formattedText }} className="text-sm text-slate-300 leading-relaxed tracking-wide" />;
     };
 
@@ -151,7 +165,8 @@ const AlertsLogs = () => {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-4">
-                                            <span className={`text-[10px] font-black tracking-widest px-3 py-1.5 rounded-md border uppercase ${colors.badge}`}>
+                                            <span className={`text-[10px] font-black tracking-widest px-3 py-1.5 rounded-md border uppercase ${colors.badge} flex items-center gap-2`}>
+                                                <span className={`w-2 h-2 rounded-full ${s.includes('critical') || s.includes('danger') ? 'bg-red-500 animate-pulse' : s.includes('warning') || s.includes('attention') ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
                                                 {alert.status || 'INFO'}
                                             </span>
                                             <div className="flex items-center gap-2 text-slate-400 text-[10px] font-mono bg-[#020617]/60 px-3 py-1.5 rounded-md border border-slate-800/80 backdrop-blur-sm">
@@ -160,38 +175,46 @@ const AlertsLogs = () => {
                                             </div>
                                         </div>
                                         
-                                        {/* Analyse formatée avec espacement */}
-                                        {alert.analysis && (
-                                            <div className="mb-5 bg-[#020617]/30 p-4 rounded-xl border border-slate-800/40">
-                                                {formatAnalysisText(alert.analysis)}
-                                            </div>
-                                        )}
+                                        {/* Fusion contextuelle : Preuve (gauche) + Analyse Sémantique (droite) */}
+                                        <div className="flex flex-col xl:flex-row gap-5">
+                                            
+                                            {/* Preuve matérielle (Vignette) */}
+                                            {(alert.image_url || alert.video_url) && (
+                                                <div className="flex flex-col gap-3 xl:w-1/3 shrink-0">
+                                                    {alert.image_url && (
+                                                        <button 
+                                                            onClick={() => setSelectedMedia({ url: alert.image_url, type: 'image' })}
+                                                            className="block w-full aspect-video rounded-xl overflow-hidden border-2 border-slate-800 hover:border-cyan-500 transition-all duration-300 relative group/img cursor-pointer shadow-lg bg-black"
+                                                        >
+                                                            <img src={alert.image_url} alt="Alerte Snapshot" className="w-full h-full object-contain transition-transform duration-500 group-hover/img:scale-105 opacity-90 group-hover/img:opacity-100" />
+                                                            <div className="absolute inset-0 bg-cyan-900/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                                                                <Search size={24} className="text-white drop-shadow-md" />
+                                                            </div>
+                                                            <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded text-[9px] font-mono text-cyan-400 border border-slate-800 backdrop-blur-sm">PREUVE MATÉRIELLE</div>
+                                                        </button>
+                                                    )}
+                                                    {alert.video_url && (
+                                                        <button 
+                                                            onClick={() => setSelectedMedia({ url: alert.video_url, type: 'video' })}
+                                                            className="flex items-center justify-center w-full py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 transition-all duration-300 text-indigo-300 font-bold gap-2 shadow-sm"
+                                                        >
+                                                            <ShieldAlert size={16} />
+                                                            <span className="text-[10px] tracking-widest uppercase">Lire la vidéo</span>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
 
-                                        {/* Optional Media Preview */}
-                                        {(alert.image_url || alert.video_url) && (
-                                            <div className="flex flex-wrap gap-4 pt-4 border-t border-slate-800/60 mt-4">
-                                                {alert.image_url && (
-                                                    <button 
-                                                        onClick={() => setSelectedMedia({ url: alert.image_url, type: 'image' })}
-                                                        className="block w-24 h-24 rounded-xl overflow-hidden border-2 border-slate-800 hover:border-cyan-500 transition-all duration-300 relative group/img cursor-pointer shadow-lg shrink-0"
-                                                    >
-                                                        <img src={alert.image_url} alt="Alerte Snapshot" className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-110" />
-                                                        <div className="absolute inset-0 bg-cyan-900/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
-                                                            <Search size={20} className="text-white drop-shadow-md" />
-                                                        </div>
-                                                    </button>
-                                                )}
-                                                {alert.video_url && (
-                                                    <button 
-                                                        onClick={() => setSelectedMedia({ url: alert.video_url, type: 'video' })}
-                                                        className="flex items-center justify-center px-6 h-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all duration-300 text-white font-bold gap-3 shadow-[0_0_15px_rgba(79,70,229,0.3)] hover:shadow-[0_0_20px_rgba(79,70,229,0.5)] shrink-0 whitespace-nowrap"
-                                                    >
-                                                        <ShieldAlert size={18} />
-                                                        <span className="text-xs tracking-widest uppercase">Voir l'extrait vidéo</span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
+                                            {/* Analyse Sémantique IA */}
+                                            {alert.analysis && (
+                                                <div className="flex-1 bg-[#020617]/40 p-5 rounded-xl border border-slate-800/60 shadow-inner relative">
+                                                    <div className="absolute top-0 right-4 px-2 py-1 bg-slate-900 border-b border-x border-slate-800 rounded-b-md text-[8px] text-slate-500 font-mono tracking-widest uppercase">
+                                                        Llama-4-Scout Semantic Analysis
+                                                    </div>
+                                                    {formatAnalysisText(alert.analysis)}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
