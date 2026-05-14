@@ -31,6 +31,51 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Audio Alarm Ref
+  const audioAlarmRef = React.useRef(null);
+
+  const startAlarm = () => {
+      if (audioAlarmRef.current) return;
+      try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          
+          oscillator.type = 'square';
+          oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+          
+          // LFO for siren effect
+          const lfo = audioCtx.createOscillator();
+          lfo.frequency.value = 2; // 2Hz siren
+          const lfoGain = audioCtx.createGain();
+          lfoGain.gain.value = 400; // Pitch variation
+          lfo.connect(lfoGain);
+          lfoGain.connect(oscillator.frequency);
+          lfo.start();
+          
+          gainNode.gain.value = 0.1; // Volume
+          oscillator.start();
+          
+          audioAlarmRef.current = { oscillator, lfo, audioCtx };
+      } catch(e) {
+          console.log("Audio playback requires user interaction first.");
+      }
+  };
+
+  const stopAlarm = () => {
+      if (audioAlarmRef.current) {
+          try {
+              audioAlarmRef.current.oscillator.stop();
+              audioAlarmRef.current.lfo.stop();
+              audioAlarmRef.current.audioCtx.close();
+          } catch(e) {}
+          audioAlarmRef.current = null;
+      }
+  };
+
   // Global Real-time Notifications
   useEffect(() => {
     if (!session) return;
@@ -47,15 +92,23 @@ function App() {
           // Increment counter
           setUnreadCount(prev => prev + 1);
           
-          // Auto remove toast after 5s
-          setTimeout(() => {
-              setToasts(current => current.filter(t => t.id !== toastId));
-          }, 5000);
+          const isCritical = newAlert.status?.toLowerCase().includes('critical') || newAlert.status?.toLowerCase().includes('danger') || newAlert.status?.toLowerCase().includes('attente');
+          
+          if (isCritical) {
+              startAlarm();
+              // Don't auto-remove critical toasts, wait for user click to stop alarm
+          } else {
+              // Auto remove non-critical toast after 5s
+              setTimeout(() => {
+                  setToasts(current => current.filter(t => t.id !== toastId));
+              }, 5000);
+          }
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(subscription);
+      stopAlarm();
     };
   }, [session]);
 
@@ -111,6 +164,7 @@ function App() {
                 onClick={() => {
                     setActiveView('alerts');
                     removeToast(toast.id);
+                    stopAlarm();
                 }}
               >
                   {/* Glowing left border line */}

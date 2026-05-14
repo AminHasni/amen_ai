@@ -5,7 +5,8 @@ import { AlertTriangle, Info, Clock, ShieldCheck, ShieldAlert, Search, X } from 
 const AlertsLogs = () => {
     const [alerts, setAlerts] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selectedMedia, setSelectedMedia] = useState(null); // { url: string, type: 'video' | 'image' }
+    const [selectedMedia, setSelectedMedia] = useState(null); // { url: string, type: 'video' | 'image', alertId: string }
+    const [activeTab, setActiveTab] = useState('urgences'); // 'urgences' | 'historique'
 
     useEffect(() => {
         fetchAlerts();
@@ -39,6 +40,35 @@ const AlertsLogs = () => {
         setLoading(false);
     };
 
+    const updateAlertStatus = async (id, currentStatus, newStatus) => {
+        if (currentStatus === newStatus) return;
+        
+        // Optimistic update
+        setAlerts(current => current.map(a => a.id === id ? { ...a, status: newStatus } : a));
+        
+        // Update in Supabase
+        const { error } = await supabase
+            .from('alerts')
+            .update({ status: newStatus })
+            .eq('id', id);
+            
+        if (error) {
+            console.error('Erreur lors de la mise à jour:', error);
+            // Revert optimistic update on error
+            fetchAlerts(); 
+        }
+    };
+
+    const handleOpenMedia = (url, type, alertId, currentStatus) => {
+        setSelectedMedia({ url, type, alertId });
+        
+        // Si l'alerte est "En attente", on la passe automatiquement "En cours de vérification" lors du clic
+        const s = (currentStatus || '').toLowerCase();
+        if (s.includes('attente') || s.includes('danger') || s.includes('critical')) {
+            updateAlertStatus(alertId, currentStatus, 'En cours de vérification');
+        }
+    };
+
     const getStatusIcon = (status) => {
         const s = (status || '').toLowerCase();
         if (s.includes('critical') || s.includes('danger') || s.includes('menace')) return <ShieldAlert className="text-red-500 animate-pulse" size={20} />;
@@ -55,13 +85,13 @@ const AlertsLogs = () => {
             iconBg: 'bg-red-950/50 border-red-800/50 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]',
             badge: 'bg-red-500/20 text-red-400 border-red-500/30 text-red-300 drop-shadow-[0_0_5px_rgba(239,68,68,0.5)]'
         };
-        if (s.includes('warning') || s.includes('attention')) return {
+        if (s.includes('vérification') || s.includes('warning') || s.includes('attention')) return {
             card: 'bg-amber-950/20 border-amber-900/50 hover:bg-amber-950/40',
             borderLeft: 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.8)]',
             iconBg: 'bg-amber-950/50 border-amber-800/50 text-amber-500 drop-shadow-[0_0_8px_rgba(245,158,11,0.8)]',
             badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30 drop-shadow-[0_0_5px_rgba(245,158,11,0.5)]'
         };
-        if (s.includes('resolved') || s.includes('ok')) return {
+        if (s.includes('clôturé') || s.includes('resolved') || s.includes('ok')) return {
             card: 'bg-emerald-950/20 border-emerald-900/50 hover:bg-emerald-950/40',
             borderLeft: 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.8)]',
             iconBg: 'bg-emerald-950/50 border-emerald-800/50 text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]',
@@ -104,6 +134,13 @@ const AlertsLogs = () => {
         return <div dangerouslySetInnerHTML={{ __html: formattedText }} className="text-sm text-slate-300 leading-relaxed tracking-wide" />;
     };
 
+    const isClosed = (status) => {
+        const s = (status || '').toLowerCase();
+        return s.includes('clôturé') || s.includes('resolved') || s.includes('ok');
+    };
+
+    const displayedAlerts = alerts.filter(a => activeTab === 'urgences' ? !isClosed(a.status) : isClosed(a.status));
+
     return (
         <div className="flex flex-col h-full bg-[#050B14] backdrop-blur-2xl border border-slate-800/80 rounded-xl overflow-hidden shadow-inner m-4 mt-0 xl:m-0 xl:mt-0 relative group">
             {/* Subtle glow effect */}
@@ -120,12 +157,25 @@ const AlertsLogs = () => {
                     </div>
                     <div>
                         <h2 className="text-lg font-bold text-white tracking-wide drop-shadow-sm">Centre d'Alertes</h2>
-                        <p className="text-[11px] text-indigo-300/80 font-mono tracking-wider uppercase mt-0.5">Registre des incidents</p>
+                        <div className="flex gap-4 mt-1">
+                            <button 
+                                onClick={() => setActiveTab('urgences')}
+                                className={`text-[11px] font-mono tracking-wider uppercase pb-1 border-b-2 transition-colors ${activeTab === 'urgences' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-400'}`}
+                            >
+                                Urgences en cours
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('historique')}
+                                className={`text-[11px] font-mono tracking-wider uppercase pb-1 border-b-2 transition-colors ${activeTab === 'historique' ? 'border-indigo-400 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-400'}`}
+                            >
+                                Historique Clôturé
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <div className="px-3 py-1 bg-[#020617] border border-slate-800 shadow-inner rounded-md text-[10px] font-mono font-bold text-slate-400 tracking-widest">
-                        {alerts.length} <span className="text-slate-600">ENTRÉES</span>
+                        {displayedAlerts.length} <span className="text-slate-600">ENTRÉES</span>
                     </div>
                 </div>
             </div>
@@ -138,7 +188,7 @@ const AlertsLogs = () => {
                             <div key={i} className="animate-pulse bg-slate-900/50 h-28 rounded-xl border border-slate-800/50 w-full"></div>
                         ))}
                     </div>
-                ) : alerts.length === 0 ? (
+                ) : displayedAlerts.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4 opacity-60">
                         <div className="relative">
                             <div className="absolute inset-0 bg-cyan-500 blur-xl opacity-20"></div>
@@ -148,13 +198,13 @@ const AlertsLogs = () => {
                     </div>
                 ) : (
                     <div className="flex flex-col gap-5">
-                        {alerts.map((alert) => {
+                        {displayedAlerts.map((alert) => {
                             const colors = getCardColorClass(alert.status);
                             
                             return (
                             <div 
                                 key={alert.id} 
-                                className={`group/alert relative border p-6 rounded-2xl transition-all duration-300 overflow-hidden shadow-lg ${colors.card}`}
+                                className={`group/alert relative border p-6 rounded-2xl transition-all duration-300 overflow-hidden shadow-lg ${colors.card} ${activeTab === 'historique' ? 'opacity-60 grayscale-[50%]' : ''}`}
                             >
                                 {/* Glowing left border accent */}
                                 <div className={`absolute left-0 top-0 bottom-0 w-1 ${colors.borderLeft}`}></div>
@@ -183,7 +233,7 @@ const AlertsLogs = () => {
                                                 <div className="flex flex-col gap-3 xl:w-1/3 shrink-0">
                                                     {alert.image_url && (
                                                         <button 
-                                                            onClick={() => setSelectedMedia({ url: alert.image_url, type: 'image' })}
+                                                            onClick={() => handleOpenMedia(alert.image_url, 'image', alert.id, alert.status)}
                                                             className="block w-full aspect-video rounded-xl overflow-hidden border-2 border-slate-800 hover:border-cyan-500 transition-all duration-300 relative group/img cursor-pointer shadow-lg bg-black"
                                                         >
                                                             <img src={alert.image_url} alt="Alerte Snapshot" className="w-full h-full object-contain transition-transform duration-500 group-hover/img:scale-105 opacity-90 group-hover/img:opacity-100" />
@@ -195,12 +245,30 @@ const AlertsLogs = () => {
                                                     )}
                                                     {alert.video_url && (
                                                         <button 
-                                                            onClick={() => setSelectedMedia({ url: alert.video_url, type: 'video' })}
+                                                            onClick={() => handleOpenMedia(alert.video_url, 'video', alert.id, alert.status)}
                                                             className="flex items-center justify-center w-full py-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 transition-all duration-300 text-indigo-300 font-bold gap-2 shadow-sm"
                                                         >
                                                             <ShieldAlert size={16} />
                                                             <span className="text-[10px] tracking-widest uppercase">Lire la vidéo</span>
                                                         </button>
+                                                    )}
+
+                                                    {/* Boutons d'action rapides (Seulement dans Urgences) */}
+                                                    {activeTab === 'urgences' && (
+                                                        <div className="flex items-center gap-2 mt-2">
+                                                            <button 
+                                                                onClick={() => updateAlertStatus(alert.id, alert.status, 'Clôturé - Fausse Alerte')}
+                                                                className="flex-1 py-2 text-[10px] font-bold text-slate-400 bg-slate-900/50 hover:bg-slate-800 rounded-lg border border-slate-700 transition-colors"
+                                                            >
+                                                                FAUSSE ALERTE
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => updateAlertStatus(alert.id, alert.status, 'Clôturé - Menace Résolue')}
+                                                                className="flex-1 py-2 text-[10px] font-bold text-emerald-400 bg-emerald-950/30 hover:bg-emerald-900/50 rounded-lg border border-emerald-900/50 transition-colors"
+                                                            >
+                                                                MENACE RÉSOLUE
+                                                            </button>
+                                                        </div>
                                                     )}
                                                 </div>
                                             )}
