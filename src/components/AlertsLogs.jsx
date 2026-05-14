@@ -7,6 +7,9 @@ const AlertsLogs = () => {
     const [loading, setLoading] = useState(true);
     const [selectedMedia, setSelectedMedia] = useState(null); // { url: string, type: 'video' | 'image', alertId: string }
     const [activeTab, setActiveTab] = useState('urgences'); // 'urgences' | 'historique'
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'critical', 'warning', 'routine'
+    const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
     useEffect(() => {
         fetchAlerts();
@@ -139,7 +142,44 @@ const AlertsLogs = () => {
         return s.includes('clôturé') || s.includes('resolved') || s.includes('ok');
     };
 
-    const displayedAlerts = alerts.filter(a => activeTab === 'urgences' ? !isClosed(a.status) : isClosed(a.status));
+    const getStatusCategory = (status) => {
+        const s = (status || '').toLowerCase();
+        if (s.includes('critical') || s.includes('danger') || s.includes('menace')) return 'critical';
+        if (s.includes('vérification') || s.includes('warning') || s.includes('attention')) return 'warning';
+        return 'routine';
+    };
+
+    const filteredAlerts = alerts.filter(a => {
+        // Tab filtering
+        const tabMatch = activeTab === 'urgences' ? !isClosed(a.status) : isClosed(a.status);
+        if (!tabMatch) return false;
+
+        // Search filtering (text search in analysis and status)
+        const searchLower = searchQuery.toLowerCase();
+        const searchMatch = !searchQuery || 
+            (a.analysis && a.analysis.toLowerCase().includes(searchLower)) ||
+            (a.status && a.status.toLowerCase().includes(searchLower));
+        if (!searchMatch) return false;
+
+        // Status category filtering
+        if (filterStatus !== 'all') {
+            if (getStatusCategory(a.status) !== filterStatus) return false;
+        }
+
+        // Date filtering
+        if (dateRange.start) {
+            if (new Date(a.created_at) < new Date(dateRange.start)) return false;
+        }
+        if (dateRange.end) {
+            const endDate = new Date(dateRange.end);
+            endDate.setHours(23, 59, 59, 999);
+            if (new Date(a.created_at) > endDate) return false;
+        }
+
+        return true;
+    });
+
+    const displayedAlerts = filteredAlerts;
 
     return (
         <div className="flex flex-col h-full bg-[#050B14] backdrop-blur-2xl border border-slate-800/80 rounded-xl overflow-hidden shadow-inner m-4 mt-0 xl:m-0 xl:mt-0 relative group">
@@ -177,6 +217,64 @@ const AlertsLogs = () => {
                     <div className="px-3 py-1 bg-[#020617] border border-slate-800 shadow-inner rounded-md text-[10px] font-mono font-bold text-slate-400 tracking-widest">
                         {displayedAlerts.length} <span className="text-slate-600">ENTRÉES</span>
                     </div>
+                </div>
+            </div>
+
+            {/* Filter Bar (Section 1.5.3) */}
+            <div className="px-5 py-3 border-b border-slate-800/60 bg-slate-900/30 flex flex-wrap items-center gap-4 z-10">
+                {/* Text Search */}
+                <div className="relative flex-1 min-w-[200px]">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input 
+                        type="text" 
+                        placeholder="Rechercher (ex: véhicule, arme, intrusion...)"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-[#020617] border border-slate-800 rounded-lg py-2 pl-10 pr-4 text-xs text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                    />
+                </div>
+
+                {/* Status Filter */}
+                <div className="flex items-center gap-1 bg-[#020617] p-1 rounded-lg border border-slate-800">
+                    {['all', 'critical', 'warning', 'routine'].map(status => (
+                        <button
+                            key={status}
+                            onClick={() => setFilterStatus(status)}
+                            className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                filterStatus === status 
+                                ? (status === 'critical' ? 'bg-red-500 text-white' : status === 'warning' ? 'bg-amber-500 text-white' : status === 'routine' ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-white')
+                                : 'text-slate-500 hover:text-slate-300'
+                            }`}
+                        >
+                            {status === 'all' ? 'TOUS' : status === 'critical' ? 'CRITIQUE' : status === 'warning' ? 'SUSPECT' : 'ROUTINE'}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Date Filter */}
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="date" 
+                        value={dateRange.start}
+                        onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                        className="bg-[#020617] border border-slate-800 rounded-lg py-1.5 px-3 text-[10px] text-slate-400 focus:outline-none focus:border-indigo-500/50"
+                    />
+                    <span className="text-slate-600 text-xs">-</span>
+                    <input 
+                        type="date" 
+                        value={dateRange.end}
+                        onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                        className="bg-[#020617] border border-slate-800 rounded-lg py-1.5 px-3 text-[10px] text-slate-400 focus:outline-none focus:border-indigo-500/50"
+                    />
+                    {(dateRange.start || dateRange.end || searchQuery || filterStatus !== 'all') && (
+                        <button 
+                            onClick={() => { setSearchQuery(''); setFilterStatus('all'); setDateRange({ start: '', end: '' }); }}
+                            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+                            title="Réinitialiser les filtres"
+                        >
+                            <X size={16} />
+                        </button>
+                    )}
                 </div>
             </div>
 
