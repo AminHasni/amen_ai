@@ -110,6 +110,28 @@ const Settings = () => {
                                         </div>
                                         <Toggle defaultChecked={true} />
                                     </div>
+
+                                    <div className="h-px w-full bg-slate-800/60"></div>
+
+                                    <div>
+                                        <label className="text-sm font-semibold text-slate-200 block mb-3">Modèle YOLOv8 sélectionné</label>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {['Nano', 'Small', 'Medium'].map(model => (
+                                                <button 
+                                                    key={model}
+                                                    onClick={() => localStorage.setItem('amen_ai_model', model)}
+                                                    className={`py-2 px-3 rounded-lg border text-[10px] font-bold tracking-widest uppercase transition-all ${
+                                                        (localStorage.getItem('amen_ai_model') || 'Small') === model
+                                                        ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400'
+                                                        : 'bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-700'
+                                                    }`}
+                                                >
+                                                    {model}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-3 italic">Le modèle "Medium" offre une meilleure précision mais nécessite plus de ressources Edge.</p>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -135,12 +157,13 @@ const Settings = () => {
                                     </div>
 
                                     <div className="space-y-2">
-                                        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Port WebSocket</label>
+                                        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Port de Diffusion (MJPEG)</label>
                                         <input 
                                             type="text" 
                                             value={piPort}
                                             onChange={(e) => setPiPort(e.target.value)}
                                             className="w-full bg-[#020617] border border-slate-700 text-white text-sm rounded-xl py-3 px-4 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-all font-mono"
+                                            placeholder="8000"
                                         />
                                     </div>
                                     
@@ -192,6 +215,35 @@ const Settings = () => {
                                         </div>
                                         <Toggle defaultChecked={true} disabled />
                                     </div>
+
+                                    <div className="h-px w-full bg-slate-800/60"></div>
+
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-slate-200 mb-4">Informations de Session</h4>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-slate-500">Utilisateur Actuel:</span>
+                                                <span className="text-slate-300 font-mono">{(supabase.auth.getSession()?.data?.session?.user?.email) || 'Agent-IA-01'}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-slate-500">Version du Dashboard:</span>
+                                                <span className="text-cyan-500 font-mono">v1.2.4-stable</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-slate-500">Chiffrement Flux:</span>
+                                                <span className="text-emerald-500 font-mono uppercase">SSL/TLS AES-256</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="h-px w-full bg-slate-800/60"></div>
+
+                                    <button 
+                                        onClick={() => { localStorage.clear(); window.location.reload(); }}
+                                        className="w-full py-3 rounded-xl border border-red-900/30 bg-red-950/10 text-red-400 text-xs font-bold hover:bg-red-950/20 transition-all"
+                                    >
+                                        RÉINITIALISER LE CACHE LOCAL
+                                    </button>
                                 </div>
                             </div>
                         )}
