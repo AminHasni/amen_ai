@@ -11,134 +11,77 @@ const LiveStream = () => {
     const imgRef = useRef(null);
     const wsRef = useRef(null);
 
-    const connectWebSocket = async () => {
-        let ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
+    const connectWebSocket = () => {
+        // Mode 100% Local (Très simple et sans latence)
+        const ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
         const port = localStorage.getItem('amen_pi_port') || "8000";
         
-        // TENTER DE RÉCUPÉRER L'IP DEPUIS SUPABASE (SYNC AUTO)
-        try {
-            const { data, error } = await supabase
-                .from('app_settings')
-                .select('value')
-                .eq('key', 'camera_url')
-                .single();
-            
-            if (data && data.value) {
-                console.log("IP récupérée depuis Supabase:", data.value);
-                ip = data.value;
-            }
-        } catch (e) {
-            console.log("Échec de la récup Supabase, utilisation du cache local.");
-        }
+        // Construction stricte de l'URL locale
+        const wsUrl = `ws://${ip}:${port}/ws/live`;
+
+        console.log("Tentative de connexion locale à:", wsUrl);
+        setDebugInfo(`Connexion au réseau local (${ip})...`);
         
-        let baseUrl;
-        if (ip.includes('://')) {
-            baseUrl = ip.replace(/^http/, 'ws').replace(/\/$/, '');
-        } else {
-            baseUrl = `ws://${ip}:${port}`;
-        }
+        if (wsRef.current) wsRef.current.close();
+        
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+        
+        let firstMessageReceived = false;
 
-        const pathsToTry = ['/ws/live', '/ws', '/'];
-
-        const attemptConnection = (pathIndex) => {
-            if (pathIndex >= pathsToTry.length) {
-                setConnectionError(true);
-                setDebugInfo("Injoignable (Canaux testés: /ws/live, /ws, /)");
-                return;
-            }
-
-            const wsUrl = baseUrl + pathsToTry[pathIndex];
-            setDebugInfo(`Vérification canal ${pathsToTry[pathIndex]}...`);
-            
-            if (wsRef.current) wsRef.current.close();
-            const ws = new WebSocket(wsUrl);
-            wsRef.current = ws;
-            
-            let firstMessageReceived = false;
-            let hasTimedOut = false;
-            
-            const timeout = setTimeout(() => {
-                if (!firstMessageReceived) {
-                    hasTimedOut = true;
-                    ws.close();
-                    attemptConnection(pathIndex + 1);
-                }
-            }, 3500);
-
-            ws.onopen = () => {
-                setIsConnected(true);
-                setConnectionError(false);
-                try { ws.send("START"); } catch(e) {}
-            };
-
-            ws.onmessage = (event) => {
-                if (!firstMessageReceived) {
-                    firstMessageReceived = true;
-                    clearTimeout(timeout);
-                    setHasReceivedFrame(true);
-                    setConnectionError(false);
-                    setDebugInfo(`Flux actif sur ${pathsToTry[pathIndex]}`);
-                }
-
-                if (event.data instanceof Blob) {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        if (imgRef.current) imgRef.current.src = reader.result;
-                    };
-                    reader.readAsDataURL(event.data);
-                } else {
-                    let finalB64 = String(event.data);
-                    if (finalB64.startsWith('{')) {
-                        try {
-                            const obj = JSON.parse(finalB64);
-                            finalB64 = obj.image || obj.frame || finalB64;
-                        } catch(e) {}
-                    }
-                    if (finalB64.length > 50) {
-                        if (!finalB64.startsWith('data:')) finalB64 = `data:image/jpeg;base64,${finalB64}`;
-                        if (imgRef.current) imgRef.current.src = finalB64;
-                    }
-                }
-            };
-
-            ws.onclose = () => {
-                if (firstMessageReceived) {
-                    setIsConnected(false);
-                    setHasReceivedFrame(false);
-                    setTimeout(connectWebSocket, 3000);
-                }
-            };
-
-            ws.onerror = () => {
-                clearTimeout(timeout);
-                if (!firstMessageReceived && !hasTimedOut) {
-                    ws.close();
-                    attemptConnection(pathIndex + 1);
-                }
-            };
+        ws.onopen = () => {
+            setIsConnected(true);
+            setConnectionError(false);
+            setDebugInfo(`Connecté à la caméra (${ip})`);
+            try { ws.send("START"); } catch(e) {}
         };
 
-        attemptConnection(0);
+        ws.onmessage = (event) => {
+            if (!firstMessageReceived) {
+                firstMessageReceived = true;
+                setHasReceivedFrame(true);
+                setConnectionError(false);
+                setDebugInfo("Flux local actif (Zéro latence)");
+            }
+
+            if (event.data instanceof Blob) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (imgRef.current) imgRef.current.src = reader.result;
+                };
+                reader.readAsDataURL(event.data);
+            } else {
+                let finalB64 = String(event.data);
+                if (finalB64.startsWith('{')) {
+                    try {
+                        const obj = JSON.parse(finalB64);
+                        finalB64 = obj.image || obj.frame || finalB64;
+                    } catch(e) {}
+                }
+                if (finalB64.length > 50) {
+                    if (!finalB64.startsWith('data:')) finalB64 = `data:image/jpeg;base64,${finalB64}`;
+                    if (imgRef.current) imgRef.current.src = finalB64;
+                }
+            }
+        };
+
+        ws.onclose = () => {
+            setIsConnected(false);
+            setHasReceivedFrame(false);
+            setTimeout(connectWebSocket, 3000);
+        };
+
+        ws.onerror = () => {
+            setConnectionError(true);
+            setDebugInfo("Caméra introuvable sur le réseau local.");
+            ws.close();
+        };
     };
 
     useEffect(() => {
         connectWebSocket();
 
-        // 1. Écouter les changements en TEMPS RÉEL sur Supabase
-        const channel = supabase
-            .channel('app_settings_changes')
-            .on(
-                'postgres_changes', 
-                { event: 'UPDATE', schema: 'public', table: 'app_settings', filter: 'key=eq.camera_url' },
-                (payload) => {
-                    console.log("Nouvelle URL détectée via Supabase Realtime:", payload.new.value);
-                    localStorage.setItem('amen_pi_ip', payload.new.value);
-                    connectWebSocket();
-                }
-            )
-            .subscribe();
-
-        // 2. Écouter les changements locaux (depuis l'onglet Configuration)
+        // Écouter les changements locaux (depuis l'onglet Configuration)
         const handleSettingsUpdate = () => {
             console.log("Paramètres locaux mis à jour, reconnexion...");
             connectWebSocket();
@@ -148,7 +91,6 @@ const LiveStream = () => {
         
         return () => {
             if (wsRef.current) wsRef.current.close();
-            supabase.removeChannel(channel);
             window.removeEventListener('amen_settings_updated', handleSettingsUpdate);
         };
     }, []);
