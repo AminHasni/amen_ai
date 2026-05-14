@@ -5,7 +5,7 @@ import LiveStream from './components/LiveStream';
 import AlertsLogs from './components/AlertsLogs';
 import SettingsView from './components/Settings';
 import { AmenLogo } from './components/Logo';
-import { Settings, Users, LayoutDashboard, LogOut, Search, Bell, Loader2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Settings, LayoutDashboard, LogOut, Search, Bell, Loader2, AlertTriangle, ShieldAlert } from 'lucide-react';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -92,7 +92,8 @@ function App() {
           // Increment counter
           setUnreadCount(prev => prev + 1);
           
-          const isCritical = newAlert.status?.toLowerCase().includes('critical') || newAlert.status?.toLowerCase().includes('danger') || newAlert.status?.toLowerCase().includes('attente');
+          const status = (newAlert.status || '').toLowerCase();
+          const isCritical = status.includes('critical') || status.includes('danger') || status.includes('attente');
           
           if (isCritical) {
               startAlarm();
@@ -154,7 +155,8 @@ function App() {
       {/* Global Toasts Container */}
       <div className="absolute top-20 md:top-28 right-4 md:right-10 z-50 flex flex-col gap-3 pointer-events-none">
           {toasts.map(toast => {
-              const isCritical = toast.status?.toLowerCase().includes('critical') || toast.status?.toLowerCase().includes('danger');
+              const status = (toast.status || '').toLowerCase();
+              const isCritical = status.includes('critical') || status.includes('danger');
               return (
               <div 
                 key={toast.id} 
@@ -213,11 +215,7 @@ function App() {
             badgeCount={unreadCount}
           />
           <div className="hidden md:block h-[1px] w-full bg-slate-800/60 my-2"></div>
-          <NavItem 
-            icon={<Users size={20} />} 
-            label="Gestion Opérateurs" 
-            className="hidden md:flex" 
-          />
+
           <NavItem 
             icon={<Settings size={20} />} 
             label="Configuration" 
