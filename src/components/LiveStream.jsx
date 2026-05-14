@@ -11,87 +11,58 @@ const LiveStream = () => {
     const imgRef = useRef(null);
     const wsRef = useRef(null);
 
-    const connectWebSocket = () => {
-        // Mode 100% Local (Très simple et sans latence)
+    const startMjpegStream = () => {
+        // Mode 100% Local (MJPEG via HTTP)
         const ip = localStorage.getItem('amen_pi_ip') || "192.168.0.18";
         const port = localStorage.getItem('amen_pi_port') || "8000";
         
-        // Construction stricte de l'URL locale
-        const wsUrl = `ws://${ip}:${port}/ws/live`;
+        // Construction stricte de l'URL locale MJPEG
+        const mjpegUrl = `http://${ip}:${port}/video_feed`;
 
-        console.log("Tentative de connexion locale à:", wsUrl);
-        setDebugInfo(`Connexion au réseau local (${ip})...`);
+        console.log("Tentative de connexion MJPEG locale à:", mjpegUrl);
+        setDebugInfo(`Connexion au réseau local MJPEG (${ip})...`);
         
-        if (wsRef.current) wsRef.current.close();
-        
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-        
-        let firstMessageReceived = false;
+        // Reset states
+        setConnectionError(false);
+        setHasReceivedFrame(false);
+        setIsConnected(false);
 
-        ws.onopen = () => {
-            setIsConnected(true);
-            setConnectionError(false);
-            setDebugInfo(`Connecté à la caméra (${ip})`);
-            try { ws.send("START"); } catch(e) {}
-        };
+        // Attribution dynamique à l'élément image standard
+        if (imgRef.current) {
+            // Ajouter un timestamp pour éviter le cache du navigateur
+            imgRef.current.src = `${mjpegUrl}?t=${new Date().getTime()}`;
+        }
+    };
 
-        ws.onmessage = (event) => {
-            if (!firstMessageReceived) {
-                firstMessageReceived = true;
-                setHasReceivedFrame(true);
-                setConnectionError(false);
-                setDebugInfo("Flux local actif (Zéro latence)");
-            }
+    const handleImageLoad = () => {
+        setIsConnected(true);
+        setHasReceivedFrame(true);
+        setConnectionError(false);
+        setDebugInfo("Flux MJPEG actif (Zéro latence)");
+    };
 
-            if (event.data instanceof Blob) {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    if (imgRef.current) imgRef.current.src = reader.result;
-                };
-                reader.readAsDataURL(event.data);
-            } else {
-                let finalB64 = String(event.data);
-                if (finalB64.startsWith('{')) {
-                    try {
-                        const obj = JSON.parse(finalB64);
-                        finalB64 = obj.image || obj.frame || finalB64;
-                    } catch(e) {}
-                }
-                if (finalB64.length > 50) {
-                    if (!finalB64.startsWith('data:')) finalB64 = `data:image/jpeg;base64,${finalB64}`;
-                    if (imgRef.current) imgRef.current.src = finalB64;
-                }
-            }
-        };
-
-        ws.onclose = () => {
-            setIsConnected(false);
-            setHasReceivedFrame(false);
-            setTimeout(connectWebSocket, 3000);
-        };
-
-        ws.onerror = () => {
-            setConnectionError(true);
-            setDebugInfo("Caméra introuvable sur le réseau local.");
-            ws.close();
-        };
+    const handleImageError = () => {
+        setIsConnected(false);
+        setHasReceivedFrame(false);
+        setConnectionError(true);
+        setDebugInfo("Erreur de connexion matérielle ou réseau.");
     };
 
     useEffect(() => {
-        connectWebSocket();
+        startMjpegStream();
 
         // Écouter les changements locaux (depuis l'onglet Configuration)
         const handleSettingsUpdate = () => {
-            console.log("Paramètres locaux mis à jour, reconnexion...");
-            connectWebSocket();
+            console.log("Paramètres locaux mis à jour, reconnexion MJPEG...");
+            startMjpegStream();
         };
 
         window.addEventListener('amen_settings_updated', handleSettingsUpdate);
         
         return () => {
-            if (wsRef.current) wsRef.current.close();
             window.removeEventListener('amen_settings_updated', handleSettingsUpdate);
+            // Cleanup: stop loading image if component unmounts
+            if (imgRef.current) imgRef.current.src = '';
         };
     }, []);
 
@@ -133,11 +104,11 @@ const LiveStream = () => {
                     <div className="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-cyan-500/50 rounded-bl-lg z-10 pointer-events-none"></div>
                     <div className="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-cyan-500/50 rounded-br-lg z-10 pointer-events-none"></div>
                     
-                    {/* REC Indicator */}
+                    {/* EN DIRECT Indicator */}
                     {hasReceivedFrame && (
-                        <div className="absolute top-6 right-8 flex items-center gap-2 z-20 bg-black/40 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800/50">
+                        <div className="absolute top-6 right-8 flex items-center gap-2 z-20 bg-black/40 px-3 py-1 rounded-md backdrop-blur-sm border border-slate-800/50">
                             <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></span>
-                            <span className="text-[10px] font-bold text-red-500 tracking-widest">REC</span>
+                            <span className="text-[10px] font-bold text-red-500 tracking-widest">EN DIRECT</span>
                         </div>
                     )}
 
@@ -153,6 +124,8 @@ const LiveStream = () => {
                         ref={imgRef}
                         alt="Surveillance AMEN_IA" 
                         className={`w-full h-full object-contain relative z-0 ${hasReceivedFrame ? 'block' : 'hidden'}`}
+                        onLoad={handleImageLoad}
+                        onError={handleImageError}
                     />
                     
                     {hasReceivedFrame && (
@@ -163,18 +136,18 @@ const LiveStream = () => {
                         <div className="flex flex-col items-center gap-5 z-20 px-8">
                             {connectionError ? (
                                 <div className="text-center space-y-4 animate-in fade-in zoom-in duration-500">
-                                    <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500">
+                                    <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-500">
                                         <WifiOff size={32} />
                                     </div>
                                     <div className="space-y-2">
-                                        <p className="text-amber-400 font-bold text-sm tracking-tight">Flux Injoignable</p>
+                                        <p className="text-red-400 font-bold text-sm tracking-tight">Connexion locale interrompue</p>
                                         <p className="text-slate-400 text-[11px] leading-relaxed max-w-[240px]">
-                                            Vous êtes probablement sur un réseau externe (4G). <br/>
-                                            Utilisez un **Tunnel Cloudflare** ou une **IP Publique** dans les réglages.
+                                            Coupure de courant ou défaillance matérielle détectée sur le réseau local. <br/>
+                                            Le système est en attente de reconnexion...
                                         </p>
                                     </div>
                                     <button 
-                                        onClick={() => connectWebSocket()}
+                                        onClick={() => startMjpegStream()}
                                         className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold transition-colors"
                                     >
                                         RÉESSAYER
