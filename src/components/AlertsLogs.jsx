@@ -200,6 +200,7 @@ const AlertsLogs = () => {
                     <div className="flex flex-col gap-5">
                         {displayedAlerts.map((alert) => {
                             const colors = getCardColorClass(alert.status);
+                            const s = (alert.status || '').toLowerCase();
                             
                             return (
                             <div 
