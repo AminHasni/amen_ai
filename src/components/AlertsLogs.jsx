@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
-import { AlertTriangle, Info, Clock, CheckCircle2, ShieldAlert, Search, X } from 'lucide-react';
+import { AlertTriangle, Info, Clock, ShieldCheck, ShieldAlert, Search, X } from 'lucide-react';
 
 const AlertsLogs = () => {
     const [alerts, setAlerts] = useState([]);
@@ -41,9 +41,9 @@ const AlertsLogs = () => {
 
     const getStatusIcon = (status) => {
         const s = (status || '').toLowerCase();
-        if (s.includes('critical') || s.includes('danger') || s.includes('menace')) return <ShieldAlert className="text-red-500" size={20} />;
+        if (s.includes('critical') || s.includes('danger') || s.includes('menace')) return <ShieldAlert className="text-red-500 animate-pulse" size={20} />;
         if (s.includes('warning') || s.includes('attention')) return <AlertTriangle className="text-amber-500" size={20} />;
-        if (s.includes('resolved') || s.includes('ok')) return <CheckCircle2 className="text-emerald-500" size={20} />;
+        if (s.includes('resolved') || s.includes('ok')) return <ShieldCheck className="text-emerald-500" size={20} />;
         return <Info className="text-cyan-500" size={20} />;
     };
 
@@ -142,7 +142,7 @@ const AlertsLogs = () => {
                     <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4 opacity-60">
                         <div className="relative">
                             <div className="absolute inset-0 bg-cyan-500 blur-xl opacity-20"></div>
-                            <CheckCircle2 size={48} className="text-cyan-500/80 relative z-10" />
+                            <ShieldCheck size={48} className="text-cyan-500/80 relative z-10" />
                         </div>
                         <p className="font-mono text-sm tracking-widest text-slate-400">SYSTÈME NOMINAL. AUCUNE ALERTE.</p>
                     </div>
